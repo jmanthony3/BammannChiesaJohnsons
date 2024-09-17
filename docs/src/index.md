@@ -1,14 +1,17 @@
-```@meta
-CurrentModule = BammannChiesaJohnsons
-```
-
 # BammannChiesaJohnsons
-
 Documentation for [BammannChiesaJohnsons](https://github.com/jmanthony3/BammannChiesaJohnsons.jl).
 
-```@index
+```@contents
+Modules = [BammannChiesaJohnsons]
+Pages   = [
+]
+Depth   = 1
 ```
 
-```@autodocs
-Modules = [BammannChiesaJohnsons]
+## Index
+```@index
+Modules = [
+    BammannChiesaJohnsons]
+Pages   = [
+]
 ```
