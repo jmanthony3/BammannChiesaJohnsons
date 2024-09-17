@@ -1,0 +1,13 @@
+name = "BammannChiesaJohnsons"
+uuid = "056ed34d-f5e1-4b0f-b3f6-c7e5e8ee168e"
+authors = ["Joby M. Anthony III", "Julian Tse Lop Kun"]
+version = "1.0.0-DEV"
+
+[compat]
+julia = "1.6.7"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
