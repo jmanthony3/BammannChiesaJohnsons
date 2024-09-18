@@ -164,7 +164,7 @@ function BCJ(params, Temp, strainrate, totale, incnum, istate)
 
 
     for i in range(2,incnum1)
-        Al_mag = Alph[1][i-1]^2 + Alph[2][i-1]^2 + Alph[4][i-1]^2 + (
+        Al_mag = Alph[1][i-1]^2 + Alph[2][i-1]^2 + Alph[3][i-1]^2 + (
             Alph[4][i-1]^2 + Alph[5][i-1]^2 + Alph[6][i-1]^2)*2.
         # Al_mag = sqrt( Al_mag * 3./2.)       # match cho
         Al_mag = sqrt( Al_mag * 2. / 3.)       # match vumat20
