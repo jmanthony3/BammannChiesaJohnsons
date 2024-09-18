@@ -13,7 +13,7 @@ makedocs(;
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", "false") == "true",
         canonical="https://jmanthony3.github.io/BammannChiesaJohnsons.jl",
-        edit_link="master",
+        edit_link="main",
         assets=String[],
     ),
     pages=[
@@ -23,5 +23,5 @@ makedocs(;
 
 deploydocs(;
     repo="github.com/jmanthony3/BammannChiesaJohnsons.jl",
-    devbranch="master",
+    devbranch="main",
 )
