@@ -5,6 +5,7 @@ version = "0.0.0-dev"
 
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+NumericalMethods = "154d3d63-62f4-4409-ad1c-5b6779bffd36"
 
 [compat]
 julia = "1.6.7"
