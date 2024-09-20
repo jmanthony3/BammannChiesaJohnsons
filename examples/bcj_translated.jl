@@ -187,7 +187,7 @@ function BCJ(params, Temp, strainrate, totale, incnum, istate)
         # Trial stress guess:
         for k in range(6)
             Str[k] = S[k][i-1] + shr_mod*DE[k]        #Trial Stress
-            Xi[k] = Str[k] - (2./3.)*Altr[k]            #trial overstress original
+            Xi[k] = Str[k] - (2. / 3.)*Altr[k]            #trial overstress original
             # Xi[k] = Str[k] - sqrt(2. / 3.)*Altr[k]            #trial overstress FIT
         end
         Xi_mag2 = Xi[1]^2 + Xi[2]^2 + Xi[3]^2 + (Xi[4]^2 + Xi[5]^2 + Xi[6]^2)*2.0
