@@ -1,8 +1,8 @@
-
 struct BCJ_metal
     θ::Float64                      # temperature
     strain_rate::Float64            # strain rate
     strain_total::Float64           # total strain
+    incnum::Int64                   # number of strain increments
     istate::Int64                   # load type (1: uniaxial tension; 2: torsion)
     params::Dict{String, Float64}   # material constants
 end
@@ -10,7 +10,7 @@ end
 mutable struct BCJ_metal_currentconfiguration
     incnum1::Int64
     μ::Float64                      # shear modulus
-    S::Vector{Float64}              # deviatoric stress tensor
+    S::Matrix{Float64}              # deviatoric stress tensor
     ϵₚ::Matrix{Float64}             # plastic strain
     ϵₜₒₜₐₗ::Matrix{Float64}         # total strain
     Δϵ::Vector{Float64}             # strain increment
@@ -35,13 +35,13 @@ mutable struct BCJ_metal_currentconfiguration
 end
 
 function BCJ_metal_currentconfiguration_init(BCJ::BCJ_metal)::BCJ_metal_currentconfiguration
-    θ            = BCJ.θ
-    strain_rate  = BCJ.strain_rate
-    strain_total = BCJ.strain_total
-    incnum       = BCJ.incnum
-    istate       = BCJ.istate
-    params       = BCJ.params
-    incnum1 = incnum+1
+    θ               = BCJ.θ
+    strain_rate     = BCJ.strain_rate
+    strain_total    = BCJ.strain_total
+    incnum          = BCJ.incnum
+    istate          = BCJ.istate
+    params          = BCJ.params
+    incnum1         = incnum+1
     # breakout params into easy variables
     G       = params["bulk_mod"]
     μ       = params["shear_mod"] * 2.
@@ -207,10 +207,10 @@ function solve!(BCJ::BCJ_metal_currentconfiguration)
             κ[i]      = Katr + H * sqrt(2. / 3.) * γ  # original
             S[:, i]    .= Sₜᵣ - (μ * γ) .* (ξ ./ Xi_mag)
             α[:, i] .= αₜᵣ + (h * γ) .* (ξ ./ Xi_mag)
-            ϵₜₒₜₐₗ[:, i]   .= ϵₜₒₜₐₗ[:, i-1] + Δϵ
             ϵₚ[:, i]   .= ϵₚ[:, i-1] + Δϵ - μ .* (S[:, i] - S[:, i-1])
+            ϵₜₒₜₐₗ[:, i]   .= ϵₜₒₜₐₗ[:, i-1] + Δϵ
         end
-        Tot[i] = β + α[1][i] + κ[i]
+        Tot[i] = β + α[1, i] + κ[i]
     end
     # return ϵₜₒₜₐₗ, S, α, κ, Tot # return OSVs and ISVs
     return nothing
