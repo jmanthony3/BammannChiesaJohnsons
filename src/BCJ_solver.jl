@@ -7,7 +7,7 @@ struct BCJ_metal
     params::Dict{String, Float64}   # material constants
 end
 
-mutable struct BCJ_metal_currentconfiguration
+struct BCJ_metal_currentconfiguration
     incnum1::Int64
     μ::Float64                      # shear modulus
     S::Matrix{Float64}              # deviatoric stress tensor
