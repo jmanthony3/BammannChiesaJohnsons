@@ -9,7 +9,7 @@ end
 
 struct BCJ_metal_currentconfiguration
     incnum1::Int64
-    μ::Float64                      # shear modulus
+    μ::Float64                      # shear modulus at temperature, θ
     S::Matrix{Float64}              # deviatoric stress tensor
     ϵₚ::Matrix{Float64}             # plastic strain
     ϵₜₒₜₐₗ::Matrix{Float64}         # total strain
@@ -18,16 +18,16 @@ struct BCJ_metal_currentconfiguration
     ξ::Vector{Float64}              # overstress tensor (S - 2/3*alpha)
     Δt::Float64                     # timestep
     strain_rate_effective::Float64  # strain rate (effective)
-    V::Float64                      # temperature dependent something
-    Y::Float64                      # temperature dependent something
-    f::Float64                      # temperature dependent something
-    rd::Float64                     # dynamic recovery of isotropic hardening
-    rs::Float64                     # static recovery of isotropic hardening
-    h::Float64                      # isotropic hardening
-    Rd::Float64                     # dynamic recovery of kinematic hardening
-    Rs::Float64                     # static recovery of kinematic hardening
-    H::Float64                      # kinematic hardening
-    κ::Vector{Float64}              # isotropic hardening tensor
+    V::Float64                      # strain rate sensitivity of yield stress
+    Y::Float64                      # rate independent yield stress
+    f::Float64                      # strain rate at which yield becomes strain rate dependent
+    rd::Float64                     # dynamic recovery of kinematic hardening
+    rs::Float64                     # diffusion controlled static/thermal recovery of kinematic hardening
+    h::Float64                      # kinematic hardening modulus
+    Rd::Float64                     # dynamic recovery of isotropic hardening
+    Rs::Float64                     # diffusion controlled static/thermal recovery of isotropic hardening
+    H::Float64                      # isotropic hardening modulus
+    κ::Vector{Float64}              # isotropic hardening scalar
     αₜᵣ::Vector{Float64}            # kinematic hardening tensor (trial)
     α::Matrix{Float64}              # kinematic hardening tensor
     β::Float64                      # yield function
