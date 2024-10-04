@@ -43,6 +43,7 @@ jobs:
           pkg"registry up"
           Pkg.update()
           pkg"dev . MakieCore GLMakie ReferenceTests"
+          DISPLAY=:0
           Pkg.update()
       - name: Run the tests
         id: referencetests
