@@ -43,6 +43,7 @@ jobs:
           # dev mono repo versions
           pkg"registry up"
           Pkg.update()
+          pkg"dev . ./GLMakie"
       - name: Run the tests
         id: referencetests
         continue-on-error: true
