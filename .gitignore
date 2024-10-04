@@ -2,5 +2,3 @@
 /docs/Manifest.toml
 /docs/build/
 /test/filepaths.jl
-./github/workflows/CI.yml
-./github/workflows/Documentation.yml
