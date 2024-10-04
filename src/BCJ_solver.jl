@@ -1,50 +1,53 @@
-struct BCJ_metal
-    θ::Float64                      # temperature
-    strain_rate::Float64            # strain rate
-    strain_total::Float64           # total strain
-    incnum::Int64                   # number of strain increments
-    istate::Int64                   # load type (1: uniaxial tension; 2: torsion)
-    params::Dict{String, Float64}   # material constants
+struct BCJ_metal{T1<:Integer, T2<:AbstractFloat}
+    θ       ::T2                # applied temperature
+    ϵ_dot   ::T2                # applied strain rate
+    ϵₙ      ::T2                # final strain
+    N       ::T1                # number of strain increments
+    istate  ::T1                # load type (1: uniaxial tension; 2: torsion)
+    params  ::Dict{String, T2}  # material constants
 end
 
-struct BCJ_metal_currentconfiguration
-    incnum1::Int64
-    μ::Float64                      # shear modulus at temperature, θ
-    S::Matrix{Float64}              # deviatoric stress tensor
-    ϵₚ::Matrix{Float64}             # plastic strain
-    ϵₜₒₜₐₗ::Matrix{Float64}         # total strain
-    Δϵ::Vector{Float64}             # strain increment
-    Sₜᵣ::Vector{Float64}            # deviatoric stress tensor (trial)
-    ξ::Vector{Float64}              # overstress tensor (S - 2/3*alpha)
-    Δt::Float64                     # timestep
-    strain_rate_effective::Float64  # strain rate (effective)
-    V::Float64                      # strain rate sensitivity of yield stress
-    Y::Float64                      # rate independent yield stress
-    f::Float64                      # strain rate at which yield becomes strain rate dependent
-    rd::Float64                     # dynamic recovery of kinematic hardening
-    rs::Float64                     # diffusion controlled static/thermal recovery of kinematic hardening
-    h::Float64                      # kinematic hardening modulus
-    Rd::Float64                     # dynamic recovery of isotropic hardening
-    Rs::Float64                     # diffusion controlled static/thermal recovery of isotropic hardening
-    H::Float64                      # isotropic hardening modulus
-    κ::Vector{Float64}              # isotropic hardening scalar
-    αₜᵣ::Vector{Float64}            # kinematic hardening tensor (trial)
-    α::Matrix{Float64}              # kinematic hardening tensor
-    β::Float64                      # yield function
-    Tot::Vector{Float64}            # kappa + alpha + beta
+struct BCJ_metal_currentconfiguration{T<:AbstractFloat}
+    N               ::Int64     # number of strain increments
+    μ               ::T         # shear modulus at temperature, θ
+    σ__             ::Matrix{T} # deviatoric stress tensor
+    σₜᵣ__           ::Matrix{T} # deviatoric stress tensor (trial)
+    ϵₚ__            ::Matrix{T} # plastic strain tensor
+    ϵ__             ::Matrix{T} # total strain tensor
+    Δϵ              ::Matrix{T} # strain increment
+    ξ__             ::Matrix{T} # overstress tensor (S - 2/3*alpha)
+    Δt              ::T         # timestep
+    ϵ_dot_effective ::T         # strain rate (effective)
+    ϵ_dot_plastic__ ::Matrix{T} # plastic strain rate
+    V               ::T         # strain rate sensitivity of yield stress at temperature, θ
+    Y               ::T         # rate independent yield stress at temperature, θ
+    f               ::T         # strain rate at which yield becomes strain rate dependent at temperature, θ
+    h               ::T         # kinematic hardening modulus at temperature, θ
+    r_d             ::T         # dynamic recovery of kinematic hardening at temperature, θ
+    r_s             ::T         # diffusion controlled static/thermal recovery of kinematic hardening at temperature, θ
+    H               ::T         # isotropic hardening modulus at temperature, θ
+    R_d             ::T         # dynamic recovery of isotropic hardening at temperature, θ
+    R_s             ::T         # diffusion controlled static/thermal recovery of isotropic hardening at temperature, θ
+    α__             ::Matrix{T} # kinematic hardening tensor
+    αₜᵣ__           ::Matrix{T} # kinematic hardening tensor (trial)
+    κ               ::Vector{T} # isotropic hardening scalar
+    β               ::T         # yield function
 end
 
 function BCJ_metal_currentconfiguration_init(BCJ::BCJ_metal)::BCJ_metal_currentconfiguration
-    θ               = BCJ.θ
-    strain_rate     = BCJ.strain_rate
-    strain_total    = BCJ.strain_total
-    incnum          = BCJ.incnum
-    istate          = BCJ.istate
-    params          = BCJ.params
-    incnum1         = incnum+1
+    θ       = BCJ.θ
+    ϵ_dot   = BCJ.ϵ_dot
+    ϵₙ      = BCJ.ϵₙ
+    N       = BCJ.N
+    istate  = BCJ.istate
+    params  = BCJ.params
+    M       = N + 1
+    T       = typeof(float(θ))
     # breakout params into easy variables
     G       = params["bulk_mod"]
-    μ       = params["shear_mod"] * 2.
+    μ       = params["shear_mod"]
+    # params_keys = keys(params)
+    # C = params[params_keys[findall(r"C\d+", params_keys)]]
     C1      = params["C01"]
     C2      = params["C02"]
     C3      = params["C03"]
@@ -70,75 +73,64 @@ function BCJ_metal_currentconfiguration_init(BCJ::BCJ_metal)::BCJ_metal_currentc
     # array declarations
     # * tenXirs: # = [#_11, #_22, #_33, #_12, #_23, #_13]
     ## OSVs
-    S   = zeros(Float64, (6, incnum1))  # deviatoric Stress
-    ϵₚ  = zeros(Float64, (6, incnum1))  # plastic Strain
-    ϵₜₒₜₐₗ  = zeros(Float64, (6, incnum1))  # total Strain
+    σ__             = zeros(T, (6, M))  # deviatoric stress
+    ϵₚ__            = zeros(T, (6, M))  # plastic strain
+    ϵ__             = zeros(T, (6, M))  # total strain
+    ϵ_dot_plastic__ = zeros(T, (6, M))  # plastic strain rate
     ## ISVs
-    α= zeros(Float64, (6, incnum1))  # alpha = kinematic hardening
-    κ = zeros(Float64,     incnum1 )  # kappa = iXitropic hardening
-    Tot = zeros(Float64,     incnum1 )  # kappa + alpha + beta
+    α__             = zeros(T, (6, M))  # alpha: kinematic hardening
+    κ               = zeros(T,     M )  # kappa: isotropic hardening
     ## holding values
-    Δϵ  = zeros(Float64,  6)            # strain increment
-    Sₜᵣ = zeros(Float64,  6)            # trial stress  (deviatoric)
-    αₜᵣ= zeros(Float64,  6)            # trial kinematic
-    ξ  = zeros(Float64,  6)            # overstress (S - 2/3*alpha)
+    Δϵ              = zeros(T, (6, 1))  # strain increment
+    σₜᵣ__           = zeros(T, (6, 1))  # trial stress  (deviatoric)
+    αₜᵣ__           = zeros(T, (6, 1))  # trial kinematic
+    ξ__             = zeros(T, (6, M))  # overstress (S - 2/3*alpha)
 
     # initialize variables (non-zeros)
-    α[:, 1] .= 0.0000001
-    S[:, 1]    .= 0.0
-    ϵₚ[:, 1]   .= 0.0
-    ϵₜₒₜₐₗ[:, 1]   .= 0.0
-    κ[1]      = 0.0
-    Tot[1]      = 0.0
+    σ__[:, 1]  .= 0.0
+    ϵ__[:, 1]  .= 0.0
+    ϵₚ__[:, 1] .= 0.0
+    α__[:, 1]  .= 0.0000001
+    κ[1]        = 0.0
+    ϵ_dot_plastic__[:, 1] .= 0.0
 
 
     # state evaluation - loading type
-    if (istate == 1)            # uniaxial tension
-        totale_incnum = strain_total / incnum
-        Δϵ     .= [totale_incnum, -0.499totale_incnum, -0.499totale_incnum, 0., 0., 0.]
-        Δt      = totale_incnum/strain_rate      # timestep
-        strain_rate_effective     = strain_rate                    # effective strain rate
-    elseif (istate == 2)        # torsion
-        # convert equivalent strain to trueshear strain
-        strain_total *= 0.5 * √(3.)
-        Δϵ     .= [0., 0., 0., strain_total / incnum, 0., 0.]
+    if istate == 1    # uniaxial tension
+        δϵ  = ϵₙ / N
+        Δϵ .= [δϵ, -0.499δϵ, -0.499δϵ, 0., 0., 0.]
+        Δt  = δϵ / ϵ_dot # timestep
+        ϵ_dot_effective = ϵ_dot
+    elseif istate == 2                  # torsion
+        # convert equivalent strain to true shear strain
+        ϵₙ *= 0.5 * √(3.)
+        Δϵ .= [0., 0., 0., ϵₙ / N, 0., 0.]
         # equivalent strain rate to true shear strain rate
-        Δt      = Δϵ[3] / strain_rate            # timestep
-        strain_rate_effective     = 2strain_rate / √(3.)        # effective strain rate
+        Δt  = Δϵ[3] / ϵ_dot            # timestep
+        ϵ_dot_effective = 2ϵ_dot / √3.
     end
 
 
-    # deviatoric strain increment & effective strain rate
-    DE_ave = sum(Δϵ[1:3]) / 3.
-    # effective strain rate - manually calculated
-    # strain_rate_effective  = sqrt((Δϵ[1]^2 + Δϵ[2]^2 + Δϵ[3]^2 \
-    #             +(Δϵ[4]^2 + Δϵ[5]^2 + Δϵ[6]^2)*2.)*(2./3.))/Δt
-
-
     # temperature dependent constants
-    V   = C1 * exp( -C2 / θ )
-    Y   = C3 * exp(  C4 / θ )
-    f   = C5 * exp( -C6 / θ )
+    V   = C1    * exp( -C2 / θ )
+    Y   = C3    * exp(  C4 / θ )
+    f   = C5    * exp( -C6 / θ )
 
-    β= Y + V * asinh( strain_rate_effective / f )
-    # β= Y
-    # print('β:  ', β)
+    β   = Y + (V * asinh( ϵ_dot_effective / f ))
 
-    rd  = C7 * exp( -C8 / θ )
-    h   = C9 -    ( C10 * θ )
-    rs  = C11* exp( -C12/ θ )
+    r_d = C7    * exp( -C8  / θ )
+    h   = C9    -    (  C10 * θ )
+    r_s = C11   * exp( -C12 / θ )
 
-    Rd  = C13* exp( -C14/ θ )
-    H   = C15-    ( C16 * θ )
-    Rs  = C17* exp( -C18/ θ )
+    R_d = C13   * exp( -C14 / θ )
+    H   = C15   -    (  C16 * θ )
+    R_s = C17   * exp( -C18 / θ )
 
     Y  *= (C19 < 0.) ? (1.) : (0.5 * ( 1.0 + tanh(max(0., C19 * ( C20 - θ )))))
-    return BCJ_metal_currentconfiguration(
-        incnum1, μ, S, ϵₚ, ϵₜₒₜₐₗ, Δϵ, Sₜᵣ, ξ, Δt, strain_rate_effective,
-        V, Y, f,
-        rd, rs, h,
-        Rd, Rs, H,
-        κ, αₜᵣ, α, β, Tot)
+    return BCJ_metal_currentconfiguration{T}(
+        N, μ, σ__, σₜᵣ__, ϵₚ__, ϵ__, Δϵ, ξ__,
+        Δt, ϵ_dot_effective, ϵ_dot_plastic__,
+        V, Y, f, h, r_d, r_s, H, R_d, R_s, α__, αₜᵣ__, κ, β)
 end
 
 
@@ -152,66 +144,63 @@ istate: 1 = tension, 2 = torsion
 **no damage in this model**
 """
 function solve!(BCJ::BCJ_metal_currentconfiguration)
-    incnum1 = BCJ.incnum1
-    μ = BCJ.μ
-    S = BCJ.S
-    ϵₚ, ϵₜₒₜₐₗ, Δϵ = BCJ.ϵₚ, BCJ.ϵₜₒₜₐₗ, BCJ.Δϵ
-    Sₜᵣ = BCJ.Sₜᵣ
-    ξ = BCJ.ξ
-    Δt = BCJ.Δt
-    strain_rate_effective = BCJ.strain_rate_effective
-    V, Y, f = BCJ.V, BCJ.Y, BCJ.f
-    rd, rs, h = BCJ.rd, BCJ.rs, BCJ.h
-    Rd, Rs, H = BCJ.Rd, BCJ.Rs, BCJ.H
-    κ, αₜᵣ, α, β, Tot = BCJ.κ, BCJ.αₜᵣ, BCJ.α, BCJ.β, BCJ.Tot
+    μ               = BCJ.μ
+    σ__, σₜᵣ__      = BCJ.σ__, BCJ.σₜᵣ__
+    ϵₚ__, ϵ__, Δϵ   = BCJ.ϵₚ__, BCJ.ϵ__, BCJ.Δϵ
+    ξ__             = BCJ.ξ__
+    Δt              = BCJ.Δt
+    ϵ_dot_effective = BCJ.ϵ_dot_effective
+    ϵ_dot_plastic__ = BCJ.ϵ_dot_plastic__
+    V, Y, f         = BCJ.V, BCJ.Y, BCJ.f
+    h, r_d, r_s     = BCJ.h, BCJ.r_d, BCJ.r_s
+    H, R_d, R_s     = BCJ.H, BCJ.R_d, BCJ.R_s
+    α__, αₜᵣ__, κ   = BCJ.α__, BCJ.αₜᵣ__, BCJ.κ
+    β               = BCJ.β
+    sqrt23          = √(2 / 3)
     # timestep calculations
-    for i ∈ range(2, incnum1)
-        Al_mag = sum(α[1:3, i-1] .^ 2.) + 2sum(α[4:6, i-1] .^ 2.)
-        # Al_mag = sqrt( Al_mag * 3./2.)       # match cho
-        Al_mag = √( Al_mag * 2. / 3.)       # match vumat20
+    for i ∈ range(2, BCJ.N + 1)
+        α_mag = sum(α__[1:3, i-1] .^ 2.) + 2sum(α__[4:6, i-1] .^ 2.)
+        # α_mag = sqrt( α_mag * 3./2.)       # match cho
+        α_mag = sqrt23 * √α_mag       # match vumat20
 
 
         # trial guesses: ISVs (from recovery) and stress
-        ## recovery for alpha
-        reco = Δt * (rd*strain_rate_effective + rs) * Al_mag       # original
-        # reco = min(reco,1.0)
-        αₜᵣ .= α[:, i-1] .* (1 - reco)
-        ## recovery for kappa
-        Reco = Δt * (Rd*strain_rate_effective + Rs) * κ[i-1]
-        # Reco = min(Reco,1.0)
-        Katr = κ[i-1] * (1 - Reco)
+        recovery    = Δt * (r_d * ϵ_dot_effective + r_s) * α_mag  # recovery for alpha (kinematic hardening)
+        Recovery    = Δt * (R_d * ϵ_dot_effective + R_s) * κ[i-1] # recovery for kappa (isotropic hardening)
+        αₜᵣ__      .= α__[:, i-1] .* (1 - recovery)
+        κₜᵣ         = κ[i-1] * (1 - Recovery)
 
         ## trial stress guess
-        Sₜᵣ    .= S[:, i-1] + μ .* Δϵ           # trial stress
-        ξ     .= Sₜᵣ - (2. / 3.) .* αₜᵣ       # trial overstress original
-        # ξ     .= Sₜᵣ - sqrt(2. / 3.) .* αₜᵣ   # trial overstress FIT
-        Xi_mag  = √(sum(ξ[1:3] .^ 2.) + 2sum(ξ[4:6] .^ 2.))
+        σₜᵣ__      .= σ__[:, i-1] + 2μ .* Δϵ           # trial stress
+        ξ__[:, i]  .= σₜᵣ__ - (2. / 3.) .* αₜᵣ__       # trial overstress original
+        # ξ__          .= σₜᵣ__ - sqrt23 .* αₜᵣ__   # trial overstress FIT
+        ξ_mag       = √(sum(ξ__[1:3, i] .^ 2.) + 2sum(ξ__[4:6, i] .^ 2.))
 
 
 
         # ----------------------------------- #
         ###   ---   YIELD CRITERION   ---   ###
         # ----------------------------------- #
-        Crit = Xi_mag - sqrt(2. / 3.)*(Katr + β)         # same as vumat20
+        flow_rule = ξ_mag - sqrt23 * (κₜᵣ + β)         # same as vumat20
         # Crit = Xi_mag - (Katr + β) #changed to FIT
-        if Crit <= 0.           # elastic
+        if flow_rule <= 0.      # elastic
             # trial guesses are correct
-            κ[i]      = Katr
-            α[:, i] .= αₜᵣ
-            S[:, i]    .= Sₜᵣ
-            ϵₚ[:, i]   .= ϵₚ[:, i-1]
-            ϵₜₒₜₐₗ[:, i]   .= ϵₜₒₜₐₗ[:, i-1] + Δϵ
+            α__[:, i]  .= αₜᵣ__
+            κ[i]        = κₜᵣ
+            σ__[:, i]  .= σₜᵣ__
+            ϵₚ__[:, i] .= ϵₚ__[:, i-1]
+            ϵ__[:, i]  .= ϵ__[:, i-1] + Δϵ
         else                    # plastic
             # Radial Return
-            γ           = (Crit) / (μ + 2. / 3. *(h+H))     # original
-            κ[i]      = Katr + H * sqrt(2. / 3.) * γ  # original
-            S[:, i]    .= Sₜᵣ - (μ * γ) .* (ξ ./ Xi_mag)
-            α[:, i] .= αₜᵣ + (h * γ) .* (ξ ./ Xi_mag)
-            ϵₚ[:, i]   .= ϵₚ[:, i-1] + Δϵ - μ .* (S[:, i] - S[:, i-1])
-            ϵₜₒₜₐₗ[:, i]   .= ϵₜₒₜₐₗ[:, i-1] + Δϵ
+            Δγ          = flow_rule / (2μ + 2(h + H) / 3)     # original
+            n           = ξ__[:, i] ./ ξ_mag
+            σ__[:, i]  .= σₜᵣ__ - (2μ * Δγ) .* n
+            α__[:, i]  .= αₜᵣ__ + ( h * Δγ) .* n
+            κ[i]        = κₜᵣ   + (H * sqrt23 * Δγ)  # original
+            ϵₚ__[:, i] .= ϵₚ__[:, i-1] + (Δϵ - ((σ__[:, i] - σ__[:, i-1]) ./ 2μ))
+            ϵ__[:, i]  .= ϵ__[:, i-1] + Δϵ
         end
-        Tot[i] = β + α[1, i] + κ[i]
+        BCJ.ϵ_dot_plastic__[:, i] .= (f * sinh(V \ (ξ_mag - κ[i] - Y)) / ξ_mag) .* ξ__[:, i]
     end
-    # return ϵₜₒₜₐₗ, S, α, κ, Tot # return OSVs and ISVs
     return nothing
 end
