@@ -96,18 +96,18 @@ function BCJ_metal_currentconfiguration_init(BCJ::BCJ_metal)::BCJ_metal_currentc
 
 
     # state evaluation - loading type
-    if istate == 1    # uniaxial tension
+    ϵ_dot_effective = if istate == 1    # uniaxial tension
         δϵ  = ϵₙ / N
         Δϵ .= [δϵ, -0.499δϵ, -0.499δϵ, 0., 0., 0.]
         Δt  = δϵ / ϵ_dot # timestep
-        ϵ_dot_effective = ϵ_dot
+        ϵ_dot
     elseif istate == 2                  # torsion
         # convert equivalent strain to true shear strain
         ϵₙ *= 0.5 * √(3.)
         Δϵ .= [0., 0., 0., ϵₙ / N, 0., 0.]
         # equivalent strain rate to true shear strain rate
         Δt  = Δϵ[3] / ϵ_dot            # timestep
-        ϵ_dot_effective = 2ϵ_dot / √3.
+        2ϵ_dot / √3.
     end
 
 
