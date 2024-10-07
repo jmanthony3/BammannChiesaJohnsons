@@ -16,6 +16,7 @@ NativeFileDialog = "e1fe445b-aa65-4df4-81c1-2041507f0fd4"
 Optim = "429524aa-4258-5aef-a3af-852621145aeb"
 
 [compat]
+Optim = "1"
 LaTeXStrings = "1"
 NativeFileDialog = "0.2"
 Documenter = "1"
