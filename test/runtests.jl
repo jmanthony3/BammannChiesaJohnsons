@@ -1,12 +1,10 @@
 using BammannChiesaJohnsons
 using CSV
 using DataFrames
+using Plots
 using Test
 
 @testset verbose=true "BammannChiesaJohnsons.jl" begin
-    df_file     = CSV.read("Data_Tension_e0002_T295.csv", DataFrame;
-    # df_file     = CSV.read("Data_Tension_e570_T295.csv", DataFrame;
-        header=true, delim=',', types=[Float64, Float64, Float64, Float64, String])
     params      = begin
         df          = CSV.read("Props_BCJ_4340_fit.csv", DataFrame; header=true, delim=',', types=[String, Float64])
         rowsofconstants = findall(occursin.(r"C\d{2}", df[!, "Comment"]))
@@ -38,22 +36,27 @@ using Test
             "bulk_mod"  => bulk_mod,
             "shear_mod" => shear_mod)
     end
-    bcj_ref     = BCJ_metal(295., 2e-3, 1., 200, 1, params)
-    # bcj_ref     = BCJ_metal(295., 570., 0.15, 200, 1, params)
-    bcj_current = BCJ_metal_currentconfiguration_init(bcj_ref, DK)
-    solve!(bcj_current)
-    σ__ = bcj_current.σ__ # [1, :]
+    df_Tension_e002_295 = CSV.read("Data_Tension_e0002_T295.csv", DataFrame;
+        header=true, delim=',', types=[Float64, Float64, Float64, Float64, String])
+    bcj_loading_Tension_e002_295 = BCJMetalStrainControl(295., 2e-3, 1., 200, 1, params)
+    # bcj_loading = BCJ_metal(295., 570., 0.15, 200, 1, params)
+    bcj_conf_Tension_e002_295 = bcjmetalreferenceconfiguration(DK, bcj_loading_Tension_e002_295)
+    bcj_ref_Tension_e002_295        = bcj_conf_Tension_e002_295[1]
+    bcj_current_Tension_e002_295    = bcj_conf_Tension_e002_295[2]
+    bcj_history_Tension_e002_295    = bcj_conf_Tension_e002_295[3]
+    solve!(bcj_current_Tension_e002_295, bcj_history_Tension_e002_295)
+    σ__ = bcj_history_Tension_e002_295.σ__ # [1, :]
     # σvM     = σ__
     σvM     = sum(map.(x->x^2., [σ__[1, :] - σ__[2, :], σ__[2, :] - σ__[3, :], σ__[3, :] - σ__[1, :]])) + (
         6sum(map.(x->x^2., [σ__[4, :], σ__[5, :], σ__[6, :]])))
     σvM     = sqrt.(σvM .* 0.5)
     idx = []
-    for t in df_file[!, "Strain"]
-        j = findlast(bcj_current.ϵ__[1, :] .<= t)
-        push!(idx, !isnothing(j) ? j : findfirst(bcj_current.ϵ__[1, :] .>= t))
+    for t in df_Tension_e002_295[!, "Strain"]
+        j = findlast(bcj_history_Tension_e002_295.ϵ__[1, :] .<= t)
+        push!(idx, !isnothing(j) ? j : findfirst(bcj_history_Tension_e002_295.ϵ__[1, :] .>= t))
     end
-    err = sum(((df_file[!, "Stress"] .* 1e6) - σvM[idx]) .^ 2.)
-    x = sum((df_file[!, "Stress"] .* 1e6) .^ 2)
+    err = sum(((df_Tension_e002_295[!, "Stress"] .* 1e6) - σvM[idx]) .^ 2.)
+    x = sum((df_Tension_e002_295[!, "Stress"] .* 1e6) .^ 2)
     # println(x)
     err /= if x > 1e9^2
         1e9^2
@@ -66,7 +69,73 @@ using Test
     end
     # println(err)
     # p = scatter(df_file[!, "Strain"], df_file[!, "Stress"] .* 1e6, label="Data", ylims=(0., 2e9))
-    # plot!(p, bcj_current.ϵ__[1, :], σvM, label="Model")
+    # plot!(p, bcj_history.ϵ__[1, :], σvM, label="Model")
     # display(p)
     @test isapprox(err, 0.020599315626415465; atol=1e-6)
+
+    df_Tension_e570_295 = CSV.read("Data_Tension_e570_T295.csv", DataFrame;
+        header=true, delim=',', types=[Float64, Float64, Float64, Float64, String])
+    # bcj_loading = BCJMetalStrainControl(295., 2e-3, 1., 200, 1, params)
+    bcj_loading_Tension_e570_295 = BCJMetalStrainControl(295., 570., 0.15, 200, 1, params)
+    bcj_conf_Tension_e570_295 = bcjmetalreferenceconfiguration(DK, bcj_loading_Tension_e570_295)
+    bcj_ref_Tension_e570_295        = bcj_conf_Tension_e570_295[1]
+    bcj_current_Tension_e570_295    = bcj_conf_Tension_e570_295[2]
+    bcj_history_Tension_e570_295    = bcj_conf_Tension_e570_295[3]
+    solve!(bcj_current_Tension_e570_295, bcj_history_Tension_e570_295)
+    σ__ = bcj_history_Tension_e570_295.σ__ # [1, :]
+    # σvM     = σ__
+    σvM     = sum(map.(x->x^2., [σ__[1, :] - σ__[2, :], σ__[2, :] - σ__[3, :], σ__[3, :] - σ__[1, :]])) + (
+        6sum(map.(x->x^2., [σ__[4, :], σ__[5, :], σ__[6, :]])))
+    σvM     = sqrt.(σvM .* 0.5)
+    idx = []
+    for t in df_Tension_e570_295[!, "Strain"]
+        j = findlast(bcj_history_Tension_e570_295.ϵ__[1, :] .<= t)
+        push!(idx, !isnothing(j) ? j : findfirst(bcj_history_Tension_e570_295.ϵ__[1, :] .>= t))
+    end
+    err = sum(((df_Tension_e570_295[!, "Stress"] .* 1e6) - σvM[idx]) .^ 2.)
+    x = sum((df_Tension_e570_295[!, "Stress"] .* 1e6) .^ 2)
+    # println(x)
+    err /= if x > 1e9^2
+        1e9^2
+    elseif x > 1e6^2
+        1e6^2
+    elseif x > 1e3^2
+        1e3^2
+    else
+        1.
+    end
+    @test isapprox(err, 0.0003468752570447703; atol=1e-6)
+
+    bcj_ref_comb        = bcj_current_Tension_e002_295
+    bcj_current_comb    = bcj_current_Tension_e002_295
+    bcj_history_comb    = bcj_conf_Tension_e570_295[3]
+    solve!(bcj_current_comb, bcj_history_comb)
+    σ__ = bcj_history_comb.σ__ # [1, :]
+    # σvM     = σ__
+    σvM     = sum(map.(x->x^2., [σ__[1, :] - σ__[2, :], σ__[2, :] - σ__[3, :], σ__[3, :] - σ__[1, :]])) + (
+        6sum(map.(x->x^2., [σ__[4, :], σ__[5, :], σ__[6, :]])))
+    σvM     = sqrt.(σvM .* 0.5)
+    idx = []
+    for t in df_Tension_e570_295[!, "Strain"]
+        j = findlast(bcj_history_comb.ϵ__[1, :] .<= t)
+        push!(idx, !isnothing(j) ? j : findfirst(bcj_history_Tension_e570_295.ϵ__[1, :] .>= t))
+    end
+    err = sum(((df_Tension_e570_295[!, "Stress"] .* 1e6) - σvM[idx]) .^ 2.)
+    x = sum((df_Tension_e570_295[!, "Stress"] .* 1e6) .^ 2)
+    # println(x)
+    err /= if x > 1e9^2
+        1e9^2
+    elseif x > 1e6^2
+        1e6^2
+    elseif x > 1e3^2
+        1e3^2
+    else
+        1.
+    end
+    df_strain = vcat(df_Tension_e002_295[!, "Strain"], df_Tension_e570_295[!, "Strain"])
+    df_stress = vcat(df_Tension_e002_295[!, "Stress"], df_Tension_e570_295[!, "Stress"]) .* 1e6
+    p = scatter(df_strain, df_stress, label="Data", ylims=(0., 2e9))
+    plot!(p, bcj_history_Tension_e570_295.ϵ__[1, :], σvM, label="Model")
+    display(p)
+    # @test isapprox(err, 0.0003468752570447703; atol=1e-6)
 end

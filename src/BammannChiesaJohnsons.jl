@@ -1,12 +1,15 @@
 module BammannChiesaJohnsons
 
 include("BCJ_solver.jl")
-export BCJ_base
+export BCJMetal
 export Bammann1990Modeling
 export DK
-export BCJ_metal
-export BCJ_metal_currentconfiguration
-export BCJ_metal_currentconfiguration_init
+export BCJMetalStrainControl
+export BCJMetalCurrentConfiguration
+export BCJMetalConfigurationHistory
+export clearhistory!
+export copyto!
+export bcjmetalreferenceconfiguration
 export solve!
 
 end

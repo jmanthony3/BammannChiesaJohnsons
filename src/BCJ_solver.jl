@@ -1,8 +1,14 @@
-abstract type BCJ_base end
-abstract type Bammann1990Modeling   <: BCJ_base end
-abstract type DK                    <: BCJ_base end
+abstract type BCJMetal end
+abstract type Bammann1990Modeling   <: BCJMetal end
+abstract type DK                    <: BCJMetal end
+abstract type ISVMetal{T<:BCJMetal} end
+abstract type KinematicHardening{T} <: ISVMetal{T} end # α__
+abstract type IsotropicHardening{T} <: ISVMetal{T} end # κ
+abstract type Damage{T}             <: ISVMetal{T} end # ϕ
 
-struct BCJ_metal{T1<:Integer, T2<:AbstractFloat}
+symmetricmagnitude(tensor::Vector{<:Real}) = √( sum(tensor[1:3] .^ 2.) + 2sum(tensor[4:6] .^ 2.) )
+
+struct BCJMetalStrainControl{T1<:Integer, T2<:AbstractFloat} <: BCJMetal
     θ       ::T2                # applied temperature
     ϵ_dot   ::T2                # applied strain rate
     ϵₙ      ::T2                # final strain
@@ -11,18 +17,17 @@ struct BCJ_metal{T1<:Integer, T2<:AbstractFloat}
     params  ::Dict{String, T2}  # material constants
 end
 
-mutable struct BCJ_metal_currentconfiguration{BaseVersion<:BCJ_base, T<:AbstractFloat}
+mutable struct BCJMetalCurrentConfiguration{Version<:BCJMetal, T<:AbstractFloat} <: BCJMetal
     N               ::Integer   # number of strain increments
+    θ               ::T         # applied temperature
     μ               ::T         # shear modulus at temperature, θ
-    σ__             ::Matrix{T} # deviatoric stress tensor
-    σₜᵣ__           ::Matrix{T} # deviatoric stress tensor (trial)
-    ϵₚ__            ::Matrix{T} # plastic strain tensor
-    ϵ__             ::Matrix{T} # total strain tensor
-    Δϵ              ::Matrix{T} # strain increment
-    ξ__             ::Matrix{T} # overstress tensor (S - 2/3*alpha)
-    Δt              ::T         # timestep
+    σ__             ::Vector{T} # deviatoric stress tensor
+    ϵₚ__            ::Vector{T} # plastic strain tensor
+    ϵ_dot_plastic__ ::Vector{T} # plastic strain rate
+    ϵ__             ::Vector{T} # total strain tensor
     ϵ_dot_effective ::T         # strain rate (effective)
-    ϵ_dot_plastic__ ::Matrix{T} # plastic strain rate
+    Δϵ              ::Vector{T} # total strain tensor step
+    Δt              ::T         # time step
     V               ::T         # strain rate sensitivity of yield stress at temperature, θ
     Y               ::T         # rate independent yield stress at temperature, θ
     f               ::T         # strain rate at which yield becomes strain rate dependent at temperature, θ
@@ -32,19 +37,69 @@ mutable struct BCJ_metal_currentconfiguration{BaseVersion<:BCJ_base, T<:Abstract
     H               ::T         # isotropic hardening modulus at temperature, θ
     R_d             ::T         # dynamic recovery of isotropic hardening at temperature, θ
     R_s             ::T         # diffusion controlled static/thermal recovery of isotropic hardening at temperature, θ
-    α__             ::Matrix{T} # kinematic hardening tensor
-    αₜᵣ__           ::Matrix{T} # kinematic hardening tensor (trial)
-    κ               ::Vector{T} # isotropic hardening scalar
+    α__             ::Vector{T} # kinematic hardening tensor
+    κ               ::T         # isotropic hardening scalar
     β               ::T         # yield function
+    ξ__             ::Vector{T} # overstress tensor (S - 2/3*alpha)
+    σₜᵣ__           ::Vector{T} # deviatoric stress tensor (trial)
+    αₜᵣ__           ::Vector{T} # kinematic hardening tensor (trial)
+    κₜᵣ             ::T         # isotropic hardening (trial)
 end
 
-function BCJ_metal_currentconfiguration_init(BCJ::BCJ_metal, BaseVersion::Type{Bammann1990Modeling})::BCJ_metal_currentconfiguration
-    θ       = BCJ.θ
-    ϵ_dot   = BCJ.ϵ_dot
-    ϵₙ      = BCJ.ϵₙ
-    N       = BCJ.N
-    istate  = BCJ.istate
-    params  = BCJ.params
+mutable struct BCJMetalConfigurationHistory{T<:AbstractFloat} <: BCJMetal
+    σ__             ::Matrix{T} # deviatoric stress tensor
+    ϵₚ__            ::Matrix{T} # plastic strain tensor
+    ϵ_dot_plastic__ ::Matrix{T} # plastic strain rate
+    ϵ__             ::Matrix{T} # total strain tensor
+    α__             ::Matrix{T} # kinematic hardening tensor
+    κ               ::Vector{T} # isotropic hardening scalar
+    ξ__             ::Matrix{T} # overstress tensor (S - 2/3*alpha)
+end
+
+function Base.:+(x::T, y::T) where {T<:BCJMetalConfigurationHistory}
+    return BCJMetalConfigurationHistory{eltype(x.σ__)}(
+        hcat(x.σ__,                y.σ__),
+        hcat(x.ϵₚ__,               y.ϵₚ__),
+        hcat(x.ϵ_dot_plastic__,    y.ϵ_dot_plastic__),
+        hcat(x.ϵ__,                y.ϵ__ .+ x.ϵ__[:, end]),
+        hcat(x.α__,                y.α__),
+        vcat(x.κ,                  y.κ),
+        hcat(x.ξ__,                y.ξ__)
+    )
+end
+
+function Base.copyto!(reference::BCJMetalCurrentConfiguration, history::BCJMetalConfigurationHistory)
+    # for attr ∈ (:θ, :V, :Y, :f, :h, :r_d, :r_s, :H, :R_d, :R_s, :α__, :κ, :β, :ξ__)
+    #     setfield!(reference, attr, getfield(current, attr))
+    # end
+    # reference.σ__               = history.σ__[:, end]
+    # reference.ϵₚ__              = history.ϵₚ__[:, end]
+    # reference.ϵ_dot_plastic__   = history.ϵ_dot_plastic__[:, end]
+    # reference.ϵ__               = history.ϵ__[:, end]
+    reference.α__               = history.α__[:, end]
+    reference.κ                 = history.κ[end]
+    # reference.ξ__               = history.ξ__[:, end]
+    return nothing
+end
+
+function record!(history::BCJMetalConfigurationHistory, i::Integer, current::BCJMetalCurrentConfiguration)
+    history.σ__[:, i]              .= current.σ__
+    history.ϵₚ__[:, i]             .= current.ϵₚ__
+    history.ϵ_dot_plastic__[:, i]  .= current.ϵ_dot_plastic__
+    history.ϵ__[:, i]              .= current.ϵ__
+    history.α__[:, i]              .= current.α__
+    history.κ[i]                    = current.κ
+    history.ξ__[:, i]              .= current.ξ__
+    return nothing
+end
+
+function bcjmetalreferenceconfiguration(::Type{Bammann1990Modeling}, bcj::BCJMetalStrainControl)::Tuple{BCJMetalCurrentConfiguration, BCJMetalCurrentConfiguration, BCJMetalConfigurationHistory}
+    θ       = bcj.θ
+    ϵ_dot   = bcj.ϵ_dot
+    ϵₙ      = bcj.ϵₙ
+    N       = bcj.N
+    istate  = bcj.istate
+    params  = bcj.params
     M       = N + 1
     T       = typeof(float(θ))
     # breakout params into easy variables
@@ -77,27 +132,19 @@ function BCJ_metal_currentconfiguration_init(BCJ::BCJ_metal, BaseVersion::Type{B
     # array declarations
     # * tenXirs: # = [#_11, #_22, #_33, #_12, #_23, #_13]
     ## OSVs
-    σ__             = zeros(T, (6, M))  # deviatoric stress
-    ϵₚ__            = zeros(T, (6, M))  # plastic strain
-    ϵ__             = zeros(T, (6, M))  # total strain
-    ϵ_dot_plastic__ = zeros(T, (6, M))  # plastic strain rate
+    σ__             = zeros(T, 6)   # deviatoric stress
+    ϵₚ__            = zeros(T, 6)   # plastic strain
+    ϵ_dot_plastic__ = zeros(T, 6)   # plastic strain rate
+    ϵ__             = zeros(T, 6)   # total strain
     ## ISVs
-    α__             = zeros(T, (6, M))  # alpha: kinematic hardening
-    κ               = zeros(T,     M )  # kappa: isotropic hardening
+    α__             = fill(1e-7, 6) # alpha: kinematic hardening
+    κ               = 0.            # kappa: isotropic hardening
     ## holding values
-    Δϵ              = zeros(T, (6, 1))  # strain increment
-    σₜᵣ__           = zeros(T, (6, 1))  # trial stress  (deviatoric)
-    αₜᵣ__           = zeros(T, (6, 1))  # trial kinematic
-    ξ__             = zeros(T, (6, M))  # overstress (S - 2/3*alpha)
-
-    # initialize variables (non-zeros)
-    σ__[:, 1]  .= 0.0
-    ϵ__[:, 1]  .= 0.0
-    ϵₚ__[:, 1] .= 0.0
-    α__[:, 1]  .= 0.0000001
-    κ[1]        = 0.0
-    ϵ_dot_plastic__[:, 1] .= 0.0
-
+    Δϵ              = zeros(T, 6)   # strain increment
+    σₜᵣ__           = zeros(T, 6)   # trial stress  (deviatoric)
+    αₜᵣ__           = zeros(T, 6)   # trial kinematic
+    κₜᵣ             = 0.
+    ξ__             = zeros(T, 6)   # overstress (S - 2/3*alpha)
 
     # state evaluation - loading type
     ϵ_dot_effective = if istate == 1    # uniaxial tension
@@ -129,19 +176,32 @@ function BCJ_metal_currentconfiguration_init(BCJ::BCJ_metal, BaseVersion::Type{B
     R_d = C13   * exp( -C14 / θ )
     H   = C15   * exp(  C16 * θ )
     R_s = C17   * exp( -C18 / θ )
-    return BCJ_metal_currentconfiguration{BaseVersion, T}(
-        N, μ, σ__, σₜᵣ__, ϵₚ__, ϵ__, Δϵ, ξ__,
-        Δt, ϵ_dot_effective, ϵ_dot_plastic__,
-        V, Y, f, h, r_d, r_s, H, R_d, R_s, α__, αₜᵣ__, κ, β)
+    current = BCJMetalCurrentConfiguration{Bammann1990Modeling, T}(N, θ, μ,
+        σ__, ϵₚ__, ϵ_dot_plastic__, ϵ__, ϵ_dot_effective, Δϵ, Δt,
+        V, Y, f, h, r_d, r_s, H, R_d, R_s, α__, κ, β, ξ__, σₜᵣ__, αₜᵣ__, κₜᵣ)
+    history = BCJMetalConfigurationHistory{T}(
+        ## OSVs
+        Matrix{T}(undef, (6, M)),   # deviatoric stress, σ__
+        Matrix{T}(undef, (6, M)),   # plastic strain, ϵₚ__
+        Matrix{T}(undef, (6, M)),   # plastic strain rate, ϵ_dot_plastic__
+        Matrix{T}(undef, (6, M)),   # total strain, ϵ__
+        ## ISVs
+        Matrix{T}(undef, (6, M)),   # kinematic hardening, α__
+        Vector{T}(undef,     M ),   # isotropic hardening, κ
+        ## holding values
+        Matrix{T}(undef, (6, M))    # overstress (S - 2/3*alpha), ξ__
+    )
+    record!(history, 1, current)
+    return (current, current, history)
 end
 
-function BCJ_metal_currentconfiguration_init(BCJ::BCJ_metal, BaseVersion::Type{DK})::BCJ_metal_currentconfiguration
-    θ       = BCJ.θ
-    ϵ_dot   = BCJ.ϵ_dot
-    ϵₙ      = BCJ.ϵₙ
-    N       = BCJ.N
-    istate  = BCJ.istate
-    params  = BCJ.params
+function bcjmetalreferenceconfiguration(::Type{DK}, bcj::BCJMetalStrainControl)::Tuple{BCJMetalCurrentConfiguration, BCJMetalCurrentConfiguration, BCJMetalConfigurationHistory}
+    θ       = bcj.θ
+    ϵ_dot   = bcj.ϵ_dot
+    ϵₙ      = bcj.ϵₙ
+    N       = bcj.N
+    istate  = bcj.istate
+    params  = bcj.params
     M       = N + 1
     T       = typeof(float(θ))
     # breakout params into easy variables
@@ -174,26 +234,19 @@ function BCJ_metal_currentconfiguration_init(BCJ::BCJ_metal, BaseVersion::Type{D
     # array declarations
     # * tenXirs: # = [#_11, #_22, #_33, #_12, #_23, #_13]
     ## OSVs
-    σ__             = zeros(T, (6, M))  # deviatoric stress
-    ϵₚ__            = zeros(T, (6, M))  # plastic strain
-    ϵ__             = zeros(T, (6, M))  # total strain
-    ϵ_dot_plastic__ = zeros(T, (6, M))  # plastic strain rate
+    σ__             = zeros(T, 6)   # deviatoric stress
+    ϵₚ__            = zeros(T, 6)   # plastic strain
+    ϵ_dot_plastic__ = zeros(T, 6)   # plastic strain rate
+    ϵ__             = zeros(T, 6)   # total strain
     ## ISVs
-    α__             = zeros(T, (6, M))  # alpha: kinematic hardening
-    κ               = zeros(T,     M )  # kappa: isotropic hardening
+    α__             = fill(1e-7, 6) # alpha: kinematic hardening
+    κ               = 0.            # kappa: isotropic hardening
     ## holding values
-    Δϵ              = zeros(T, (6, 1))  # strain increment
-    σₜᵣ__           = zeros(T, (6, 1))  # trial stress  (deviatoric)
-    αₜᵣ__           = zeros(T, (6, 1))  # trial kinematic
-    ξ__             = zeros(T, (6, M))  # overstress (S - 2/3*alpha)
-
-    # initialize variables (non-zeros)
-    σ__[:, 1]  .= 0.0
-    ϵ__[:, 1]  .= 0.0
-    ϵₚ__[:, 1] .= 0.0
-    α__[:, 1]  .= 0.0000001
-    κ[1]        = 0.0
-    ϵ_dot_plastic__[:, 1] .= 0.0
+    Δϵ              = zeros(T, 6)   # strain increment
+    σₜᵣ__           = zeros(T, 6)   # trial stress  (deviatoric)
+    αₜᵣ__           = zeros(T, 6)   # trial kinematic
+    κₜᵣ             = 0.
+    ξ__             = zeros(T, 6)   # overstress (S - 2/3*alpha)
 
 
     # state evaluation - loading type
@@ -228,10 +281,23 @@ function BCJ_metal_currentconfiguration_init(BCJ::BCJ_metal, BaseVersion::Type{D
     R_s = C17   * exp( -C18 / θ )
 
     Y  *= (C19 < 0.) ? (1.) : (0.5 * ( 1.0 + tanh(max(0., C19 * ( C20 - θ )))))
-    return BCJ_metal_currentconfiguration{BaseVersion, T}(
-        N, μ, σ__, σₜᵣ__, ϵₚ__, ϵ__, Δϵ, ξ__,
-        Δt, ϵ_dot_effective, ϵ_dot_plastic__,
-        V, Y, f, h, r_d, r_s, H, R_d, R_s, α__, αₜᵣ__, κ, β)
+    current = BCJMetalCurrentConfiguration{DK, T}(N, θ, μ,
+        σ__, ϵₚ__, ϵ_dot_plastic__, ϵ__, ϵ_dot_effective, Δϵ, Δt,
+        V, Y, f, h, r_d, r_s, H, R_d, R_s, α__, κ, β, ξ__, σₜᵣ__, αₜᵣ__, κₜᵣ)
+    history = BCJMetalConfigurationHistory{T}(
+        ## OSVs
+        Matrix{T}(undef, (6, M)),   # deviatoric stress, σ__
+        Matrix{T}(undef, (6, M)),   # plastic strain, ϵₚ__
+        Matrix{T}(undef, (6, M)),   # plastic strain rate, ϵ_dot_plastic__
+        Matrix{T}(undef, (6, M)),   # total strain, ϵ__
+        ## ISVs
+        Matrix{T}(undef, (6, M)),   # kinematic hardening, α__
+        Vector{T}(undef,     M ),   # isotropic hardening, κ
+        ## holding values
+        Matrix{T}(undef, (6, M))    # overstress (S - 2/3*alpha), ξ__
+    )
+    record!(history, 1, current)
+    return (current, current, history)
 end
 
 
@@ -244,35 +310,27 @@ istate: 1 = tension, 2 = torsion
 
 **no damage in this model**
 """
-function solve!(BCJ::BCJ_metal_currentconfiguration{Bammann1990Modeling, <:Real})
-    μ               = BCJ.μ
-    σ__, σₜᵣ__      = BCJ.σ__, BCJ.σₜᵣ__
-    ϵₚ__, ϵ__, Δϵ   = BCJ.ϵₚ__, BCJ.ϵ__, BCJ.Δϵ
-    ξ__             = BCJ.ξ__
-    Δt              = BCJ.Δt
-    ϵ_dot_effective = BCJ.ϵ_dot_effective
-    ϵ_dot_plastic__ = BCJ.ϵ_dot_plastic__
-    V, Y, f         = BCJ.V, BCJ.Y, BCJ.f
-    h, r_d, r_s     = BCJ.h, BCJ.r_d, BCJ.r_s
-    H, R_d, R_s     = BCJ.H, BCJ.R_d, BCJ.R_s
-    α__, αₜᵣ__, κ   = BCJ.α__, BCJ.αₜᵣ__, BCJ.κ
-    β               = BCJ.β
+function solve!(bcj::BCJMetalCurrentConfiguration{Bammann1990Modeling, <:AbstractFloat},
+        history::BCJMetalConfigurationHistory)
+    μ, Δϵ, Δt       = bcj.μ, bcj.Δϵ, bcj.Δt
+    ϵ_dot_effective = bcj.ϵ_dot_effective
+    V, Y, f, β      = bcj.V, bcj.Y, bcj.f, bcj.β
+    h, r_d, r_s     = bcj.h, bcj.r_d, bcj.r_s # alpha
+    H, R_d, R_s     = bcj.H, bcj.R_d, bcj.R_s # kappa
     # timestep calculations
-    for i ∈ range(2, BCJ.N + 1)
-        α_mag = sum(α__[1:3, i-1] .^ 2.) + 2sum(α__[4:6, i-1] .^ 2.)
-
-
+    for i ∈ range(2, bcj.N + 1)
+        α_mag       = symmetricmagnitude(bcj.α__)
         # trial guesses: ISVs (from recovery) and stress
-        recovery    = Δt * (r_d * ϵ_dot_effective + r_s) * α_mag  # recovery for alpha (kinematic hardening)
-        Recovery    = Δt * (R_d * ϵ_dot_effective + R_s) * κ[i-1] # recovery for kappa (isotropic hardening)
-        αₜᵣ__      .= α__[:, i-1] .* (1 - recovery)
-        κₜᵣ         = κ[i-1] * (1 - Recovery)
+        recovery    = Δt * (r_d * ϵ_dot_effective + r_s) * α_mag    # recovery for alpha (kinematic hardening)
+        Recovery    = Δt * (R_d * ϵ_dot_effective + R_s) * bcj.κ    # recovery for kappa (isotropic hardening)
+        αₜᵣ__       = bcj.α__  .* (1 - recovery)
+        κₜᵣ         = bcj.κ     * (1 - Recovery)
 
         ## trial stress guess
-        σₜᵣ__      .= σ__[:, i-1] + (2μ .* Δϵ)           # trial stress
-        ξ__[:, i]  .= σₜᵣ__ - αₜᵣ__                 # trial overstress original
+        σₜᵣ__       = bcj.σ__ + (2μ .* Δϵ)           # trial stress
+        bcj.ξ__    .= σₜᵣ__ - αₜᵣ__                 # trial overstress original
         # ξ__          .= σₜᵣ__ - sqrt23 .* αₜᵣ__   # trial overstress FIT
-        ξ_mag       = √(sum(ξ__[1:3, i] .^ 2.) + 2sum(ξ__[4:6, i] .^ 2.))
+        ξ_mag       = symmetricmagnitude(bcj.ξ__)
 
 
 
@@ -283,58 +341,51 @@ function solve!(BCJ::BCJ_metal_currentconfiguration{Bammann1990Modeling, <:Real}
         # Crit = Xi_mag - (Katr + β) #changed to FIT
         if flow_rule <= 0.      # elastic
             # trial guesses are correct
-            α__[:, i]  .= αₜᵣ__
-            κ[i]        = κₜᵣ
-            σ__[:, i]  .= σₜᵣ__
-            ϵₚ__[:, i] .= ϵₚ__[:, i-1]
-            ϵ__[:, i]  .= ϵ__[:, i-1] + Δϵ
+            bcj.σ__    .= σₜᵣ__
+            bcj.α__    .= αₜᵣ__
+            bcj.κ       = κₜᵣ
+            bcj.ϵ__   .+= Δϵ
         else                    # plastic
             # Radial Return
             Δγ          = flow_rule / (2μ + 2(h + H) / 3)     # original
-            n           = ξ__[:, i] ./ ξ_mag
-            σ__[:, i]  .= σₜᵣ__ - (2μ * Δγ) .* n
-            α__[:, i]  .= αₜᵣ__ + ( h * Δγ) .* n
-            κ[i]        = κₜᵣ   + (H * Δγ)  # original
-            ϵₚ__[:, i] .= ϵₚ__[:, i-1] + (Δϵ - ((σ__[:, i] - σ__[:, i-1]) ./ 2μ))
-            ϵ__[:, i]  .= ϵ__[:, i-1] + Δϵ
+            n           = bcj.ξ__ ./ ξ_mag
+            σ__prev     = bcj.σ__
+            bcj.σ__    .= σₜᵣ__ - (2μ * Δγ) .* n
+            bcj.α__    .= αₜᵣ__ + ( h * Δγ) .* n
+            bcj.κ       = κₜᵣ   + (H * Δγ)  # original
+            bcj.ϵₚ__  .+= (Δϵ - ((bcj.σ__ - σ__prev) ./ 2μ))
+            bcj.ϵ__   .+= Δϵ
         end
-        BCJ.ϵ_dot_plastic__[:, i] .= (f * sinh(V \ (ξ_mag - κ[i] - Y)) / ξ_mag) .* ξ__[:, i]
+        bcj.ϵ_dot_plastic__ .= (f * sinh(V \ (ξ_mag - bcj.κ - Y)) / ξ_mag) .* bcj.ξ__
+        record!(history, i, bcj)
     end
     return nothing
 end
 
-function solve!(BCJ::BCJ_metal_currentconfiguration{DK, <:Real})
-    μ               = BCJ.μ
-    σ__, σₜᵣ__      = BCJ.σ__, BCJ.σₜᵣ__
-    ϵₚ__, ϵ__, Δϵ   = BCJ.ϵₚ__, BCJ.ϵ__, BCJ.Δϵ
-    ξ__             = BCJ.ξ__
-    Δt              = BCJ.Δt
-    ϵ_dot_effective = BCJ.ϵ_dot_effective
-    ϵ_dot_plastic__ = BCJ.ϵ_dot_plastic__
-    V, Y, f         = BCJ.V, BCJ.Y, BCJ.f
-    h, r_d, r_s     = BCJ.h, BCJ.r_d, BCJ.r_s
-    H, R_d, R_s     = BCJ.H, BCJ.R_d, BCJ.R_s
-    α__, αₜᵣ__, κ   = BCJ.α__, BCJ.αₜᵣ__, BCJ.κ
-    β               = BCJ.β
+function solve!(bcj::BCJMetalCurrentConfiguration{DK, <:AbstractFloat},
+        history::BCJMetalConfigurationHistory)
+    μ, Δϵ, Δt       = bcj.μ, bcj.Δϵ, bcj.Δt
+    ϵ_dot_effective = bcj.ϵ_dot_effective
+    V, Y, f, β      = bcj.V, bcj.Y, bcj.f, bcj.β
+    h, r_d, r_s     = bcj.h, bcj.r_d, bcj.r_s # alpha
+    H, R_d, R_s     = bcj.H, bcj.R_d, bcj.R_s # kappa
     sqrt23          = √(2 / 3)
     # timestep calculations
-    for i ∈ range(2, BCJ.N + 1)
-        α_mag = sum(α__[1:3, i-1] .^ 2.) + 2sum(α__[4:6, i-1] .^ 2.)
+    for i ∈ range(2, bcj.N + 1)
+        α_mag       = symmetricmagnitude(bcj.α__)
         # α_mag = sqrt( α_mag * 3./2.)       # match cho
-        α_mag = sqrt23 * √α_mag       # match vumat20
-
-
+        α_mag      *= sqrt23       # match vumat20
         # trial guesses: ISVs (from recovery) and stress
-        recovery    = Δt * (r_d * ϵ_dot_effective + r_s) * α_mag  # recovery for alpha (kinematic hardening)
-        Recovery    = Δt * (R_d * ϵ_dot_effective + R_s) * κ[i-1] # recovery for kappa (isotropic hardening)
-        αₜᵣ__      .= α__[:, i-1] .* (1 - recovery)
-        κₜᵣ         = κ[i-1] * (1 - Recovery)
+        recovery    = Δt * (r_d * ϵ_dot_effective + r_s) * α_mag    # recovery for alpha (kinematic hardening)
+        Recovery    = Δt * (R_d * ϵ_dot_effective + R_s) * bcj.κ    # recovery for kappa (isotropic hardening)
+        αₜᵣ__       = bcj.α__  .* (1 - recovery)
+        κₜᵣ         = bcj.κ     * (1 - Recovery)
 
         ## trial stress guess
-        σₜᵣ__      .= σ__[:, i-1] + 2μ .* Δϵ           # trial stress
-        ξ__[:, i]  .= σₜᵣ__ - (2. / 3.) .* αₜᵣ__       # trial overstress original
+        σₜᵣ__       = bcj.σ__ + 2μ .* Δϵ           # trial stress
+        bcj.ξ__    .= σₜᵣ__ - (2. / 3.) .* αₜᵣ__       # trial overstress original
         # ξ__          .= σₜᵣ__ - sqrt23 .* αₜᵣ__   # trial overstress FIT
-        ξ_mag       = √(sum(ξ__[1:3, i] .^ 2.) + 2sum(ξ__[4:6, i] .^ 2.))
+        ξ_mag       = symmetricmagnitude(bcj.ξ__)
 
 
 
@@ -345,22 +396,23 @@ function solve!(BCJ::BCJ_metal_currentconfiguration{DK, <:Real})
         # Crit = Xi_mag - (Katr + β) #changed to FIT
         if flow_rule <= 0.      # elastic
             # trial guesses are correct
-            α__[:, i]  .= αₜᵣ__
-            κ[i]        = κₜᵣ
-            σ__[:, i]  .= σₜᵣ__
-            ϵₚ__[:, i] .= ϵₚ__[:, i-1]
-            ϵ__[:, i]  .= ϵ__[:, i-1] + Δϵ
+            bcj.σ__    .= σₜᵣ__
+            bcj.α__    .= αₜᵣ__
+            bcj.κ       = κₜᵣ
+            bcj.ϵ__   .+= Δϵ
         else                    # plastic
             # Radial Return
             Δγ          = flow_rule / (2μ + 2(h + H) / 3)     # original
-            n           = ξ__[:, i] ./ ξ_mag
-            σ__[:, i]  .= σₜᵣ__ - (2μ * Δγ) .* n
-            α__[:, i]  .= αₜᵣ__ + ( h * Δγ) .* n
-            κ[i]        = κₜᵣ   + (H * sqrt23 * Δγ)  # original
-            ϵₚ__[:, i] .= ϵₚ__[:, i-1] + (Δϵ - ((σ__[:, i] - σ__[:, i-1]) ./ 2μ))
-            ϵ__[:, i]  .= ϵ__[:, i-1] + Δϵ
+            n           = bcj.ξ__ ./ ξ_mag
+            σ__prev     = bcj.σ__
+            bcj.σ__    .= σₜᵣ__ - (2μ * Δγ) .* n
+            bcj.α__    .= αₜᵣ__ + ( h * Δγ) .* n
+            bcj.κ       = κₜᵣ   + (H * sqrt23 * Δγ)  # original
+            bcj.ϵₚ__  .+= (Δϵ - ((bcj.σ__ - σ__prev) ./ 2μ))
+            bcj.ϵ__   .+= Δϵ
         end
-        BCJ.ϵ_dot_plastic__[:, i] .= (f * sinh(V \ (ξ_mag - κ[i] - Y)) / ξ_mag) .* ξ__[:, i]
+        bcj.ϵ_dot_plastic__ .= (f * sinh(V \ (ξ_mag - bcj.κ - Y)) / ξ_mag) .* bcj.ξ__
+        record!(history, i, bcj)
     end
     return nothing
 end
