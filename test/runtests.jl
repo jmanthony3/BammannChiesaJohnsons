@@ -46,10 +46,7 @@ using Test
     bcj_history_Tension_e002_295    = bcj_conf_Tension_e002_295[3]
     solve!(bcj_current_Tension_e002_295, bcj_history_Tension_e002_295)
     σ__ = bcj_history_Tension_e002_295.σ__ # [1, :]
-    # σvM     = σ__
-    σvM     = sum(map.(x->x^2., [σ__[1, :] - σ__[2, :], σ__[2, :] - σ__[3, :], σ__[3, :] - σ__[1, :]])) + (
-        6sum(map.(x->x^2., [σ__[4, :], σ__[5, :], σ__[6, :]])))
-    σvM     = sqrt.(σvM .* 0.5)
+    σvM     = symmetricvonMises(σ__)
     idx = []
     for t in df_Tension_e002_295[!, "Strain"]
         j = findlast(bcj_history_Tension_e002_295.ϵ__[1, :] .<= t)
@@ -84,9 +81,7 @@ using Test
     solve!(bcj_current_Tension_e570_295, bcj_history_Tension_e570_295)
     σ__ = bcj_history_Tension_e570_295.σ__ # [1, :]
     # σvM     = σ__
-    σvM     = sum(map.(x->x^2., [σ__[1, :] - σ__[2, :], σ__[2, :] - σ__[3, :], σ__[3, :] - σ__[1, :]])) + (
-        6sum(map.(x->x^2., [σ__[4, :], σ__[5, :], σ__[6, :]])))
-    σvM     = sqrt.(σvM .* 0.5)
+    σvM     = symmetricvonMises(σ__)
     idx = []
     for t in df_Tension_e570_295[!, "Strain"]
         j = findlast(bcj_history_Tension_e570_295.ϵ__[1, :] .<= t)
@@ -112,9 +107,7 @@ using Test
     solve!(bcj_current_comb, bcj_history_comb)
     σ__ = bcj_history_comb.σ__ # [1, :]
     # σvM     = σ__
-    σvM     = sum(map.(x->x^2., [σ__[1, :] - σ__[2, :], σ__[2, :] - σ__[3, :], σ__[3, :] - σ__[1, :]])) + (
-        6sum(map.(x->x^2., [σ__[4, :], σ__[5, :], σ__[6, :]])))
-    σvM     = sqrt.(σvM .* 0.5)
+    σvM     = symmetricvonMises(σ__)
     idx = []
     for t in df_Tension_e570_295[!, "Strain"]
         j = findlast(bcj_history_comb.ϵ__[1, :] .<= t)

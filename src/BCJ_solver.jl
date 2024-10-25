@@ -7,6 +7,14 @@ abstract type IsotropicHardening{T} <: ISVMetal{T} end # κ
 abstract type Damage{T}             <: ISVMetal{T} end # ϕ
 
 symmetricmagnitude(tensor::Vector{<:Real}) = √( sum(tensor[1:3] .^ 2.) + 2sum(tensor[4:6] .^ 2.) )
+function symmetricvonMises(tensor::Union{Vector{<:Real}, SubArray{<:Real}})::AbstractFloat
+    σvM = sum(map(x->x^2., [tensor[1] - tensor[2], tensor[2] - tensor[3], tensor[3] - tensor[1]])) + (
+        6sum(map(x->x^2., [tensor[4], tensor[5], tensor[6]])))
+    return √(σvM / 2.)
+end
+function symmetricvonMises(tensor::Matrix{<:Real})::Vector{AbstractFloat}
+    return map(symmetricvonMises, eachcol(tensor))
+end
 
 struct BCJMetalStrainControl{T1<:Integer, T2<:AbstractFloat} <: BCJMetal
     θ       ::T2                # applied temperature
