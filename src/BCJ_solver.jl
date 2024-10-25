@@ -80,13 +80,13 @@ function Base.copyto!(reference::BCJMetalCurrentConfiguration, history::BCJMetal
     # for attr ∈ (:θ, :V, :Y, :f, :h, :r_d, :r_s, :H, :R_d, :R_s, :α__, :κ, :β, :ξ__)
     #     setfield!(reference, attr, getfield(current, attr))
     # end
-    # reference.σ__               = history.σ__[:, end]
+    reference.σ__               = history.σ__[:, end]
     # reference.ϵₚ__              = history.ϵₚ__[:, end]
     # reference.ϵ_dot_plastic__   = history.ϵ_dot_plastic__[:, end]
     # reference.ϵ__               = history.ϵ__[:, end]
     reference.α__               = history.α__[:, end]
     reference.κ                 = history.κ[end]
-    # reference.ξ__               = history.ξ__[:, end]
+    reference.ξ__               = history.ξ__[:, end]
     return nothing
 end
 

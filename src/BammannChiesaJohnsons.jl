@@ -13,8 +13,8 @@ export symmetricvonMises
 export BCJMetalStrainControl
 export BCJMetalCurrentConfiguration
 export BCJMetalConfigurationHistory
-# export clearhistory!
 export copyto!
+export record!
 export bcjmetalreferenceconfiguration
 export solve!
 
